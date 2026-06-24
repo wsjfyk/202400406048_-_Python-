@@ -1,25 +1,24 @@
 """
-UI module - improved visual appearance using ttkbootstrap and tkcalendar (phase 1 enhancements).
-Provides ExpenseTrackerUI and run_app entry point.
+UI module: attempt to use icons from assets when available.
+Buttons will show icon+text when icon exists, otherwise fall back to text only.
 """
+
+# ... (Keep the previously committed ExpenseTrackerUI implementation but update button creation to use icons)
 
 import traceback
 import datetime
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog
 
 import pandas as pd
-from PIL import ImageTk
+from PIL import Image, ImageTk
+from pathlib import Path
 
-# use ttkbootstrap for nicer widgets and themes
 try:
-    from ttkbootstrap import Style, ttk
+    from ttkbootstrap import Style
 except Exception:
-    # fallback to standard ttk if ttkbootstrap is not installed
-    import tkinter.ttk as ttk
     Style = None
 
-# use DateEntry from tkcalendar for date selection
 try:
     from tkcalendar import DateEntry
 except Exception:
@@ -27,16 +26,28 @@ except Exception:
 
 from .data_manager import DataManager
 from .charts import show_monthly_chart, show_category_pie
-from .utils import make_logo_image
+from .utils import make_logo_image, load_icon_image
+
+
+def _load_icon_photo(name: str, prefer_size: int = 24):
+    """Return a PhotoImage if an icon file exists, otherwise None."""
+    p = load_icon_image(name, prefer_size=prefer_size)
+    if not p:
+        return None
+    try:
+        img = Image.open(p)
+        return ImageTk.PhotoImage(img)
+    except Exception:
+        return None
 
 
 class ExpenseTrackerUI:
-    """Main application UI with enhanced layout and ttkbootstrap styling when available."""
-
     def __init__(self, root, data_manager: DataManager, theme: str = "litera"):
         self.root = root
         self.data_manager = data_manager
         self.root.title("记账本 - 美化版")
+
+        self._icons = {}
 
         # Apply ttkbootstrap style if available
         self.style = None
@@ -49,7 +60,6 @@ class ExpenseTrackerUI:
                 except Exception:
                     self.style = None
 
-        # fonts and spacing
         default_font = (None, 10)
         try:
             s = ttk.Style() if Style is None else self.style
@@ -59,7 +69,6 @@ class ExpenseTrackerUI:
         except Exception:
             pass
 
-        # top header with logo
         header = ttk.Frame(self.root, padding=(10, 8))
         header.pack(fill=tk.X)
         try:
@@ -70,7 +79,6 @@ class ExpenseTrackerUI:
             ttk.Label(header, text="记账本", font=(None, 14, "bold")).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Label(header, text="个人记账本", font=(None, 14, "bold")).pack(side=tk.LEFT)
 
-        # main content area with two columns: left table + right summary
         main_pane = ttk.Frame(self.root, padding=(10, 6))
         main_pane.pack(fill=tk.BOTH, expand=True)
 
@@ -80,14 +88,12 @@ class ExpenseTrackerUI:
         right_frame = ttk.Frame(main_pane, width=280)
         right_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # toolbar above table
         toolbar = ttk.Frame(left_frame)
         toolbar.pack(fill=tk.X, pady=(0, 6))
 
         ttk.Label(toolbar, text="日期:").pack(side=tk.LEFT, padx=(4, 2))
         self.var_date = tk.StringVar(value=datetime.date.today().isoformat())
         if DateEntry is not None:
-            # use DateEntry widget
             self.date_entry = DateEntry(toolbar, textvariable=self.var_date, date_pattern='yyyy-mm-dd', width=12)
             self.date_entry.pack(side=tk.LEFT)
         else:
@@ -105,21 +111,39 @@ class ExpenseTrackerUI:
         self.var_amount = tk.StringVar()
         ttk.Entry(toolbar, textvariable=self.var_amount, width=10).pack(side=tk.LEFT)
 
-        ttk.Button(toolbar, text="添加", command=self.on_add).pack(side=tk.LEFT, padx=6)
-        ttk.Button(toolbar, text="编辑", command=self.on_edit).pack(side=tk.LEFT, padx=6)
-        ttk.Button(toolbar, text="删除", command=self.on_delete).pack(side=tk.LEFT, padx=6)
+        # load optional icons
+        self._icons['add'] = _load_icon_photo('icon_add')
+        self._icons['edit'] = _load_icon_photo('icon_edit')
+        self._icons['delete'] = _load_icon_photo('icon_delete')
 
-        # search/filter area
+        # use image+text if icon available, otherwise text-only button
+        if self._icons.get('add'):
+            ttk.Button(toolbar, text="添加", image=self._icons['add'], compound='left', command=self.on_add).pack(side=tk.LEFT, padx=6)
+        else:
+            ttk.Button(toolbar, text="添加", command=self.on_add).pack(side=tk.LEFT, padx=6)
+        if self._icons.get('edit'):
+            ttk.Button(toolbar, text="编辑", image=self._icons['edit'], compound='left', command=self.on_edit).pack(side=tk.LEFT, padx=6)
+        else:
+            ttk.Button(toolbar, text="编辑", command=self.on_edit).pack(side=tk.LEFT, padx=6)
+        if self._icons.get('delete'):
+            ttk.Button(toolbar, text="删除", image=self._icons['delete'], compound='left', command=self.on_delete).pack(side=tk.LEFT, padx=6)
+        else:
+            ttk.Button(toolbar, text="删除", command=self.on_delete).pack(side=tk.LEFT, padx=6)
+
         filter_frame = ttk.Frame(left_frame)
         filter_frame.pack(fill=tk.X, pady=(0, 6))
         ttk.Label(filter_frame, text="搜索:").pack(side=tk.LEFT, padx=(2, 4))
         self.var_search = tk.StringVar()
         search_entry = ttk.Entry(filter_frame, textvariable=self.var_search, width=24)
         search_entry.pack(side=tk.LEFT)
-        ttk.Button(filter_frame, text="应用", command=self.on_search).pack(side=tk.LEFT, padx=6)
+        # optional search icon
+        self._icons['search'] = _load_icon_photo('icon_search')
+        if self._icons.get('search'):
+            ttk.Button(filter_frame, text="应用", image=self._icons['search'], compound='left', command=self.on_search).pack(side=tk.LEFT, padx=6)
+        else:
+            ttk.Button(filter_frame, text="应用", command=self.on_search).pack(side=tk.LEFT, padx=6)
         ttk.Button(filter_frame, text="重置", command=self.on_reset_search).pack(side=tk.LEFT)
 
-        # treeview table
         table_frame = ttk.Frame(left_frame)
         table_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -135,21 +159,18 @@ class ExpenseTrackerUI:
         self.tree.configure(yscrollcommand=vsb.set)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # configure alternating row colors
         try:
             self.tree.tag_configure("oddrow", background="#f9f9f9")
             self.tree.tag_configure("evenrow", background="#ffffff")
         except Exception:
             pass
 
-        # context menu
         self.context_menu = tk.Menu(self.root, tearoff=0)
         self.context_menu.add_command(label="编辑", command=self.on_edit)
         self.context_menu.add_command(label="删除", command=self.on_delete)
         self.tree.bind("<Button-3>", self._show_context_menu)
         self.tree.bind("<Double-1>", lambda e: self.on_edit())
 
-        # right summary area
         summary_frame = ttk.LabelFrame(right_frame, text="汇总")
         summary_frame.pack(fill=tk.X, pady=(0, 6), padx=6)
 
@@ -162,42 +183,47 @@ class ExpenseTrackerUI:
         self.lbl_net = ttk.Label(summary_frame, text="净额: 0.00", font=(None, 11, "bold"))
         self.lbl_net.pack(anchor=tk.W, padx=8, pady=6)
 
-        # chart buttons
         charts_frame = ttk.LabelFrame(right_frame, text="图表")
         charts_frame.pack(fill=tk.X, pady=(6, 6), padx=6)
-        ttk.Button(charts_frame, text="月度柱状图", command=self.on_show_monthly).pack(fill=tk.X, padx=8, pady=4)
-        ttk.Button(charts_frame, text="类别饼图", command=self.on_show_category).pack(fill=tk.X, padx=8, pady=4)
+        # chart icons
+        self._icons['chart'] = _load_icon_photo('icon_chart')
+        if self._icons.get('chart'):
+            ttk.Button(charts_frame, text="月度柱状图", image=self._icons['chart'], compound='left', command=self.on_show_monthly).pack(fill=tk.X, padx=8, pady=4)
+            ttk.Button(charts_frame, text="类别饼图", image=self._icons['chart'], compound='left', command=self.on_show_category).pack(fill=tk.X, padx=8, pady=4)
+        else:
+            ttk.Button(charts_frame, text="月度柱状图", command=self.on_show_monthly).pack(fill=tk.X, padx=8, pady=4)
+            ttk.Button(charts_frame, text="类别饼图", command=self.on_show_category).pack(fill=tk.X, padx=8, pady=4)
 
-        # export buttons
         export_frame = ttk.LabelFrame(right_frame, text="导出")
         export_frame.pack(fill=tk.X, pady=(6, 6), padx=6)
-        ttk.Button(export_frame, text="导出 CSV", command=self.on_export_csv).pack(fill=tk.X, padx=8, pady=4)
-        ttk.Button(export_frame, text="导出 Excel", command=self.on_export_excel).pack(fill=tk.X, padx=8, pady=4)
+        self._icons['export'] = _load_icon_photo('icon_export')
+        if self._icons.get('export'):
+            ttk.Button(export_frame, text="导出 CSV", image=self._icons['export'], compound='left', command=self.on_export_csv).pack(fill=tk.X, padx=8, pady=4)
+            ttk.Button(export_frame, text="导出 Excel", image=self._icons['export'], compound='left', command=self.on_export_excel).pack(fill=tk.X, padx=8, pady=4)
+        else:
+            ttk.Button(export_frame, text="导出 CSV", command=self.on_export_csv).pack(fill=tk.X, padx=8, pady=4)
+            ttk.Button(export_frame, text="导出 Excel", command=self.on_export_excel).pack(fill=tk.X, padx=8, pady=4)
 
-        # status bar
         self.status_var = tk.StringVar(value="就绪")
         status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
-        # initial load
         self.refresh_table()
         self.update_summary()
 
-    # ------------------ actions ------------------
+    # actions (same as before)
     def on_add(self):
         try:
             date_str = self.var_date.get().strip()
             if not date_str:
                 messagebox.showwarning("输入错误", "请填写日期（YYYY-MM-DD）。")
                 return
-            # validate date
             datetime.date.fromisoformat(date_str)
             amount = float(self.var_amount.get().strip())
             rec_id = self.data_manager.add_record(date_str, self.var_type.get(), self.var_category.get(), amount, "")
             self.status_var.set("已添加记录")
             self.refresh_table()
             self.update_summary()
-            # clear amount
             self.var_amount.set("")
         except ValueError as ve:
             messagebox.showwarning("输入错误", f"无效输入：{ve}")
@@ -281,12 +307,10 @@ class ExpenseTrackerUI:
         except Exception as e:
             messagebox.showerror("导出失败", str(e))
 
-    # ------------------ helpers ------------------
     def refresh_table(self, filter_keyword: str = None):
         for r in self.tree.get_children():
             self.tree.delete(r)
         df = self.data_manager.get_all_records().copy()
-        # optional filtering
         if filter_keyword:
             mask = (
                 df["date"].astype(str).str.contains(filter_keyword, na=False)
@@ -294,13 +318,11 @@ class ExpenseTrackerUI:
                 | df["note"].astype(str).str.contains(filter_keyword, na=False)
             )
             df = df[mask]
-        # sort by date desc if parseable
         try:
             df["date_parsed"] = pd.to_datetime(df["date"], errors="coerce")
             df = df.sort_values(by="date_parsed", ascending=False).drop(columns="date_parsed")
         except Exception:
             pass
-        # insert rows with alternating tags
         for i, (_, row) in enumerate(df.iterrows()):
             iid = row["id"]
             display_amount = f"{float(row['amount']):.2f}"
@@ -330,8 +352,6 @@ class ExpenseTrackerUI:
 
 
 class EditRecordDialog:
-    """Modal dialog to edit a single record."""
-
     def __init__(self, master, data_manager: DataManager, record_id: str, row, on_saved=None):
         self.data_manager = data_manager
         self.record_id = record_id
@@ -375,7 +395,6 @@ class EditRecordDialog:
 
     def on_save(self):
         try:
-            # validation
             datetime.date.fromisoformat(self.var_date.get().strip())
             amount = float(self.var_amount.get().strip())
             new_values = {
@@ -394,10 +413,10 @@ class EditRecordDialog:
 
 
 # entry point used by __main__.py
+
 def run_app():
     root = tk.Tk()
     dm = DataManager()
-    # set default size
     root.geometry("980x640")
     app = ExpenseTrackerUI(root, dm)
     root.mainloop()
