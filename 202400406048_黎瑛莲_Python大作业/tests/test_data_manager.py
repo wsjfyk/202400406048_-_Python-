@@ -1,51 +1,53 @@
-import sys
 import os
+import sys
+from pathlib import Path
 
-def _add_src_to_path():
-    # Ensure src/ is on sys.path so tests can import the package
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    src = os.path.join(root, "src")
-    if src not in sys.path:
-        sys.path.insert(0, src)
+# Ensure src is on path when running tests from this tests/ directory
+ROOT = Path(__file__).resolve().parents[2]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 
-def test_data_manager_crud(tmp_path):
-    _add_src_to_path()
+def test_data_manager_add_update_delete(tmp_path):
+    """Test DataManager add, update, delete and persistence."""
     from accounting_202400406048.data_manager import DataManager
 
-    test_file = tmp_path / "test_records.csv"
-    dm = DataManager(filepath=str(test_file))
-    # Initially empty
-    assert dm.get_all_records().empty
+    csv_path = tmp_path / "records.csv"
 
-    # Add record
-    rec_id = dm.add_record("2026-06-24", "支出", "测试", 10.5, "note")
-    df = dm.get_all_records()
-    assert len(df) == 1
-    assert float(df.loc[df['id'] == rec_id, 'amount'].iloc[0]) == 10.5
+    dm = DataManager(filepath=str(csv_path))
+    # initially empty
+    df0 = dm.get_all_records()
+    assert df0.empty
 
-    # Update record
-    dm.update_record(rec_id, {"amount": 20.0, "note": "updated"})
-    df2 = dm.get_all_records()
-    assert float(df2.loc[df2['id'] == rec_id, 'amount'].iloc[0]) == 20.0
-    assert df2.loc[df2['id'] == rec_id, 'note'].iloc[0] == "updated"
-
-    # Summary
+    # add record
+    rec_id = dm.add_record("2026-06-24", "支出", "餐饮", 50.0, "午餐")
+    df1 = dm.get_all_records()
+    assert len(df1) == 1
     income, expense = dm.get_summary()
-    assert expense == 20.0
+    assert income == 0.0 and expense == 50.0
 
-    # Delete
+    # update record
+    dm.update_record(rec_id, {"amount": 60.0, "note": "晚餐"})
+    df2 = dm.get_all_records()
+    assert float(df2.loc[df2["id"] == rec_id, "amount"].iloc[0]) == 60.0
+
+    # persistence: create new manager to read same file
+    dm2 = DataManager(filepath=str(csv_path))
+    df_new = dm2.get_all_records()
+    assert len(df_new) == 1
+
+    # delete
     dm.delete_record(rec_id)
     assert dm.get_all_records().empty
 
 
 def test_export_csv(tmp_path):
-    _add_src_to_path()
     from accounting_202400406048.data_manager import DataManager
 
-    test_file = tmp_path / "test_records2.csv"
-    dm = DataManager(filepath=str(test_file))
-    dm.add_record("2026-06-24", "收入", "工资", 1000.0, "salary")
-    out_path = tmp_path / "out.csv"
+    csv_path = tmp_path / "records.csv"
+    out_path = tmp_path / "export.csv"
+    dm = DataManager(filepath=str(csv_path))
+    dm.add_record("2026-06-24", "收入", "工资", 1000.0, "工资入账")
     dm.export_csv(str(out_path))
     assert out_path.exists()
