@@ -36,6 +36,14 @@ def show_monthly_chart(parent_window, data_frame):
 
 
 def show_category_pie(parent_window, data_frame):
+    """Show expense category pie chart. Improved robustness and styling to avoid invisible pies.
+
+    Reasons for previous 'invisible pie' issues can include:
+    - group values being all zeros or NaN
+    - matplotlib using a transparent facecolor matching the window background
+    - tiny slices with labels overlapping
+    This function adds guards and explicit styling to make the pie visible.
+    """
     if data_frame.empty:
         messagebox.showinfo("No data", "No records available for plotting.")
         return
@@ -46,12 +54,50 @@ def show_category_pie(parent_window, data_frame):
         return
     df_exp["amount"] = pd.to_numeric(df_exp["amount"], errors="coerce").fillna(0.0)
     group = df_exp.groupby("category")["amount"].sum().sort_values(ascending=False)
+    # filter out zero or negative categories
+    group = group[group > 0]
     if group.empty:
         messagebox.showinfo("No data", "No expense amounts.")
         return
+
+    # styling: explicit figure background and equal aspect so pie is circular
     fig, ax = plt.subplots(figsize=(6, 6))
-    ax.pie(group, labels=group.index, autopct="%1.1f%%", startangle=90)
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    # use a qualitative colormap with enough distinct colors
+    try:
+        cmap = plt.get_cmap("tab20")
+        colors = [cmap(i % cmap.N) for i in range(len(group))]
+    except Exception:
+        colors = None
+
+    # autopct: hide labels for very small slices
+    def autopct_generator(vals):
+        def inner(pct):
+            total = sum(vals)
+            val = int(round(pct * total / 100.0))
+            # show percentage only if >0.5% or value non-zero
+            return f"{pct:.1f}%" if pct >= 0.5 else ""
+
+        return inner
+
+    wedges, texts, autotexts = ax.pie(
+        group.values,
+        labels=group.index,
+        autopct=autopct_generator(group.values),
+        startangle=90,
+        colors=colors,
+        wedgeprops={"linewidth": 0.5, "edgecolor": "white"},
+    )
     ax.set_title("Expense Category Ratio")
+    ax.axis("equal")
+    # improve readability of labels
+    for t in texts:
+        t.set_fontsize(9)
+    for a in autotexts:
+        a.set_fontsize(8)
+
     plt.tight_layout()
     _show_figure_in_tk(parent_window, fig, title="Category Pie")
 
