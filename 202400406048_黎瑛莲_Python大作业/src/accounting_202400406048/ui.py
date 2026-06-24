@@ -1,15 +1,29 @@
 """
-UI module - improved visual appearance and usability for the accounting package.
+UI module - improved visual appearance using ttkbootstrap and tkcalendar (phase 1 enhancements).
 Provides ExpenseTrackerUI and run_app entry point.
 """
 
 import traceback
 import datetime
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import messagebox, filedialog
 
 import pandas as pd
 from PIL import ImageTk
+
+# use ttkbootstrap for nicer widgets and themes
+try:
+    from ttkbootstrap import Style, ttk
+except Exception:
+    # fallback to standard ttk if ttkbootstrap is not installed
+    import tkinter.ttk as ttk
+    Style = None
+
+# use DateEntry from tkcalendar for date selection
+try:
+    from tkcalendar import DateEntry
+except Exception:
+    DateEntry = None
 
 from .data_manager import DataManager
 from .charts import show_monthly_chart, show_category_pie
@@ -17,25 +31,33 @@ from .utils import make_logo_image
 
 
 class ExpenseTrackerUI:
-    """Main application UI with enhanced layout and styling."""
+    """Main application UI with enhanced layout and ttkbootstrap styling when available."""
 
-    def __init__(self, root, data_manager: DataManager):
+    def __init__(self, root, data_manager: DataManager, theme: str = "litera"):
         self.root = root
         self.data_manager = data_manager
         self.root.title("记账本 - 美化版")
 
-        # Apply ttk style for consistent look
-        self.style = ttk.Style(self.root)
-        try:
-            self.style.theme_use("clam")
-        except Exception:
-            pass
+        # Apply ttkbootstrap style if available
+        self.style = None
+        if Style is not None:
+            try:
+                self.style = Style(theme=theme)
+            except Exception:
+                try:
+                    self.style = Style()
+                except Exception:
+                    self.style = None
 
         # fonts and spacing
         default_font = (None, 10)
-        self.style.configure("TLabel", font=default_font)
-        self.style.configure("TButton", padding=6)
-        self.style.configure("Treeview", font=(None, 10), rowheight=26)
+        try:
+            s = ttk.Style() if Style is None else self.style
+            s.configure("TLabel", font=default_font)
+            s.configure("TButton", padding=6)
+            s.configure("Treeview", font=(None, 10), rowheight=26)
+        except Exception:
+            pass
 
         # top header with logo
         header = ttk.Frame(self.root, padding=(10, 8))
@@ -55,7 +77,7 @@ class ExpenseTrackerUI:
         left_frame = ttk.Frame(main_pane)
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        right_frame = ttk.Frame(main_pane, width=260)
+        right_frame = ttk.Frame(main_pane, width=280)
         right_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
         # toolbar above table
@@ -64,7 +86,12 @@ class ExpenseTrackerUI:
 
         ttk.Label(toolbar, text="日期:").pack(side=tk.LEFT, padx=(4, 2))
         self.var_date = tk.StringVar(value=datetime.date.today().isoformat())
-        ttk.Entry(toolbar, textvariable=self.var_date, width=12).pack(side=tk.LEFT)
+        if DateEntry is not None:
+            # use DateEntry widget
+            self.date_entry = DateEntry(toolbar, textvariable=self.var_date, date_pattern='yyyy-mm-dd', width=12)
+            self.date_entry.pack(side=tk.LEFT)
+        else:
+            ttk.Entry(toolbar, textvariable=self.var_date, width=12).pack(side=tk.LEFT)
 
         ttk.Label(toolbar, text="类型:").pack(side=tk.LEFT, padx=(8, 2))
         self.var_type = tk.StringVar(value="支出")
@@ -109,8 +136,11 @@ class ExpenseTrackerUI:
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
         # configure alternating row colors
-        self.tree.tag_configure("oddrow", background="#f9f9f9")
-        self.tree.tag_configure("evenrow", background="#ffffff")
+        try:
+            self.tree.tag_configure("oddrow", background="#f9f9f9")
+            self.tree.tag_configure("evenrow", background="#ffffff")
+        except Exception:
+            pass
 
         # context menu
         self.context_menu = tk.Menu(self.root, tearoff=0)
@@ -271,7 +301,7 @@ class ExpenseTrackerUI:
         except Exception:
             pass
         # insert rows with alternating tags
-        for i, row in df.iterrows():
+        for i, (_, row) in enumerate(df.iterrows()):
             iid = row["id"]
             display_amount = f"{float(row['amount']):.2f}"
             tag = "evenrow" if (i % 2 == 0) else "oddrow"
@@ -321,7 +351,10 @@ class EditRecordDialog:
         frm.pack(fill=tk.BOTH, expand=True)
 
         ttk.Label(frm, text="日期(YYYY-MM-DD)：").grid(row=0, column=0, sticky=tk.W, padx=6, pady=6)
-        ttk.Entry(frm, textvariable=self.var_date).grid(row=0, column=1, padx=6, pady=6)
+        if DateEntry is not None:
+            DateEntry(frm, textvariable=self.var_date, date_pattern='yyyy-mm-dd').grid(row=0, column=1, padx=6, pady=6)
+        else:
+            ttk.Entry(frm, textvariable=self.var_date).grid(row=0, column=1, padx=6, pady=6)
 
         ttk.Label(frm, text="类型：").grid(row=1, column=0, sticky=tk.W, padx=6)
         ttk.Combobox(frm, textvariable=self.var_type, values=["支出", "收入"], state="readonly").grid(row=1, column=1, padx=6, pady=6)
@@ -364,6 +397,7 @@ class EditRecordDialog:
 def run_app():
     root = tk.Tk()
     dm = DataManager()
+    # set default size
     root.geometry("980x640")
     app = ExpenseTrackerUI(root, dm)
     root.mainloop()
