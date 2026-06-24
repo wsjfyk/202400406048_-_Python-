@@ -1,0 +1,7 @@
+# Requirements for the project (use this to install dependencies)
+
+pandas
+matplotlib
+pillow
+pytest
+openpyxl
